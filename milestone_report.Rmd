@@ -1,0 +1,336 @@
+---
+title: "Milestone Report"
+author: "Nikhil Parimi"
+date: "2024-12-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(tidyr)
+```
+
+## Loading the data
+
+For this report we will be considering analysing information from the English database, with the data downloaded from: <https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip>, containing twitter, news and blog data.
+
+```{r, warning = FALSE}
+con <- file("data/final/en_US/en_US.blogs.txt", open = "r")
+blogs <- readLines(con, encoding = "UTF-8", skipNul = TRUE)
+close(con)
+
+con <- file("data/final/en_US/en_US.news.txt", open = "r")
+news <- readLines(con, encoding = "UTF-8", skipNul = TRUE)
+close(con)
+
+con <- file("data/final/en_US/en_US.twitter.txt", open = "r")
+twitter <- readLines(con, encoding = "UTF-8", skipNul = TRUE)
+close(con)
+
+rm(con)
+```
+
+## Data Summary
+
+We will now delve into the data to gain more insight into the information. Here we will explore the: number of lines, number of characters, number of words as well as average words per line (WPL) in each of the 3 source files.
+
+```{r}
+file_names = c("en_US.blogs.txt", "en_US.news.txt", "en_US.twitter.txt")
+num_lines <- sapply(list(blogs, news, twitter), length)
+num_char <- sapply(list(nchar(blogs), nchar(news), nchar(twitter)), sum)
+
+words_blogs <- str_count(blogs, "\\S+")
+words_news <- str_count(news, "\\S+")
+words_twitter <- str_count(twitter, "\\S+")
+
+num_words <- sapply(list(words_blogs, words_news, words_twitter), sum)
+
+avg_wpl <- sapply(list(words_blogs, words_news, words_twitter), mean)
+
+summary <- data.frame(
+  File = file_names,
+  Lines = num_lines,
+  Characters = num_char,
+  Words = num_words,
+  Average_WPL = avg_wpl
+  )
+
+kable(summary, format = "pipe", digits = 2, caption = "Summary of Files")
+```
+
+A few plots showing the spread of the line length can be seen below.
+
+```{r, echo = FALSE}
+plot_blogs <- ggplot(data.frame(words_blogs), aes(x = words_blogs)) +
+  geom_histogram(binwidth = 5, fill = "skyblue", color = "black") +
+  coord_cartesian(xlim = c(0, 200))
+
+plot_news <- ggplot(data.frame(words_news), aes(x = words_news)) +
+  geom_histogram(binwidth = 5, fill = "lightgreen", color = "black") +
+  coord_cartesian(xlim = c(0, 200))
+
+plot_twitter <- ggplot(data.frame(words_twitter), aes(x = words_twitter)) +
+  geom_histogram(binwidth = 1, fill = "lightcoral", color = "black")
+
+grid.arrange(plot_blogs, plot_news, plot_twitter, nrow = 3, ncol = 1)
+```
+
+The x limit for words in blogs and news was truncated to 200 each respectively as the maximum values for number of words in a line reached almost 7000 and 2000 words respectively.
+
+## Sampling
+
+As mentioned in the brief, it is not necessary for all information to be used to build predictive models and more often than not, a few randomly selected samples can get an accurate approximation to results.
+
+Here we will take a 5% sample of the data to work with which comes out to 3520690 words! We will then be performing some data cleaning on it before performing some data analysis to get a better understanding of the data.
+
+```{r}
+sample_size <- 0.05
+# For reproducibility
+set.seed(120)
+
+sample_blogs <- sample(blogs, length(blogs) * sample_size, replace = FALSE)
+sample_news <- sample(news, length(news) * sample_size, replace = FALSE)
+sample_twitter <- sample(twitter, length(twitter) * sample_size, replace = FALSE)
+```
+
+## Combine data
+
+We will also consider all of the data as one; will consequently require us to merge all 3 samples into 1.
+
+```{r}
+sample_data <- c(sample_blogs, sample_news, sample_twitter)
+sample_fileName <- "data/final/en_US/en_US.sample.txt"
+con <- file(sample_fileName, open = "w")
+writeLines(sample_data, con)
+close(con)
+```
+
+```{r, include=FALSE}
+rm(blogs, news, twitter, sample_blogs, sample_news, sample_twitter, plot_blogs, plot_news, plot_twitter)
+```
+
+## Cleaning
+
+Here we will make convert the data into a usable format to proceed further. The subheadings below will detail all the cleaning done step by step.
+
+```{r, include=FALSE}
+con <- file("data/final/en_US/en_US.sample.txt", open = "r")
+sample_data <- readLines(con, encoding = "UTF-8", skipNul = TRUE)
+close(con)
+
+rm(con)
+```
+
+### Email / URL removal
+
+The section of code will remove all email and urls present in the data.
+
+```{r, warning = FALSE}
+library("qdapRegex")
+
+sample_data <- rm_email(sample_data)
+sample_data <- rm_url(sample_data)
+
+```
+
+### Removal of non-english characters and punctuation.
+
+This code removes all non english characters present in the set [A-Z], [a-z] or the space character. This means all numbers, punctuation (bar from ') and different language characters are removed.
+
+```{r}
+sample_data <- rm_non_ascii(sample_data)
+sample_data <- rm_default(sample_data, pattern = "[^A-Za-z ]")
+```
+
+### Convert all words to lowercase
+
+```{r}
+sample_data <- tolower(sample_data)
+```
+
+### Tokenisation
+
+Tokenisation is the process of replacing sensitive data with unique identification symbols that retain all the essential information about the data. Here the tokenisation will be to split the sentences into its constituent parts (words).
+
+```{r}
+tokenised <- strsplit(sample_data, "\\s")
+```
+
+### Profanity Filtering
+
+This list was acquired from [https://github.com/dsojevic/profanity-list](https://github.com/dsojevic/profanity-list) and will filter out based on the list.
+
+```{r}
+
+con <- file("data/profanities.txt", open = "r")
+profanities <- readLines(con, encoding = "UTF-8", skipNul = TRUE)
+close(con)
+
+cleaned_data <- lapply(tokenised, setdiff, y = profanities)
+
+```
+
+## Explore the Data
+
+```{r}
+# Sample of some data:
+print(cleaned_data[514:516])
+
+```
+Number of lines:
+```{r}
+length(cleaned_data)
+```
+Number of words:
+```{r}
+sum(sapply(cleaned_data, length))
+```
+
+After cleaning the data fully, we go from a total of 352069 words from our initial raw sample to 2887554 words!
+
+### Word Frequencies
+
+Here we will explore the 20 words that appear most frequently.
+
+```{r}
+word_freq <- table(unlist(cleaned_data))
+word_freq_df <- as.data.frame(word_freq)
+colnames(word_freq_df) <- c("Word", "Frequency")
+
+top_20_words <- word_freq_df|>
+  arrange(desc(Frequency)) |>
+  head(20)
+
+top_20_words$Word <- as.character(top_20_words$Word)
+
+```
+
+
+```{r, echo = FALSE}
+ggplot(top_20_words, aes(x = reorder(Word, Frequency), y = Frequency, fill = nchar(Word))) +
+    geom_bar(stat = "identity") +
+    coord_flip() +  # Flip the coordinates for better readability
+    scale_fill_gradient(low = "lightblue", high = "darkblue") +  # Color gradient based on word length
+    labs(title = "Top 20 Most Frequent Words", x = "Word", y = "Frequency", fill = "Word Length")
+```
+
+
+Now we will do a test to see if the top 5000 most frequent words in the English language and compare it to the top 5000 words from my sample data.
+
+```{r}
+con <- file("data/5000-words.txt", open = "r")
+common <- readLines(con, encoding = "UTF-8", skipNul = TRUE)
+close(con)
+
+rm(con)
+```
+
+Clean the data to be of the same form of the sample data. (Lowercase, no punctuation etc.)
+
+```{r}
+common <- rm_default(common, pattern = "[^A-Za-z ]")
+
+common <- tolower(common)
+length(common)
+```
+
+Getting the top 5000 most frequent words from the sample data.
+
+```{r}
+common_freq_df <- word_freq_df|>
+  arrange(desc(Frequency)) |>
+  head(5000)
+
+common_sample <- as.character(common_freq_df$Word)
+
+```
+
+Checking the number of words that are the same between the two lists
+
+```{r}
+common_words <- intersect(common, common_sample)
+
+in_common <- length(common_words)
+
+print(paste("Number of words in common: ", in_common))
+print(paste("Percentage of words in common", (in_common/5000)*100, "%"))
+```
+
+Only about 56% of the top 5000 words are covered by sample of 5% of the data. This is something that could definitely be improved by increasing the sample size.
+
+
+### N-Grams
+
+Now we will look at N-grams which are a sequence of n adjacent symbols in a particular order. With respect to words, n-grams can capture vital information with regards to word order that can be used to create predictive models.
+
+### Bi-Grams (2-Grams)
+
+```{r}
+library(tidytext)
+
+tb_sample_data <- tibble(txt = sample_data)
+
+bigrams <- tb_sample_data |> 
+  unnest_ngrams(phrases, txt, n = 2)
+
+bigram_freq <- bigrams |>
+    count(phrases, sort = TRUE)
+
+top_10_bigrams <- head(bigram_freq, 10)
+top_10_bigrams
+
+```
+
+Now we will visualise the data below.
+
+```{r, echo = FALSE}
+ggplot(top_10_bigrams, aes(x = reorder(phrases, n), y = n, fill = n)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(title = "Top 10 Most Common Bigrams", x = "Bigram", y = "Frequency")
+```
+
+
+### Tri-Grams (3-grams)
+
+```{r}
+trigrams <- tb_sample_data |> 
+  unnest_ngrams(phrases, txt, n = 3)
+
+trigram_freq <- trigrams |>
+  # Filter NA vals
+  filter(!is.na(phrases)) |>
+  count(phrases, sort = TRUE)
+
+top_10_trigrams <- head(trigram_freq, 10)
+top_10_trigrams
+
+```
+
+Now we will visualise the data below.
+
+```{r, echo = FALSE}
+ggplot(top_10_trigrams, aes(x = reorder(phrases, n), y = n, fill = n)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(title = "Top 10 Most Common Trigrams", x = "Trigram", y = "Frequency")
+```
+
+## Conclusion
+
+In conclusion, we have set up a lot of things like the processing and tokenisation of data that can be used when building a predictive model.
+
+## Goals
+
+1. See how Sample Size affects word coverage
+2. Build a predictive model on the data
+3. Build a Shiny App with an accompanying presentation explaining the application.
+
+Thank you!
