@@ -1,0 +1,65 @@
+---
+title: "Next Word Prediction"
+author: "Nikhil Parimi"
+date: "2024-12-27"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Goals and Aims
+
+This presentation will give a brief run down of the work done throughout the project and what went into building a word prediction algorithm as well as its deployment.
+
+The project can be viewed at:
+
+- [https://nikhilparimi.shinyapps.io/word_prediction/](https://nikhilparimi.shinyapps.io/word_prediction/)
+
+The code for the project is located at:
+
+- [https://github.com/nikhilparimi/DS-Capstone](https://github.com/nikhilparimi/DS-Capstone)
+
+In the next few slides we will go over:
+
+- Data Processing and Cleaning
+- Predictive Algorithm
+- Deployment of application
+
+## Data Processing and Cleaning
+
+For this model I have sampled 15% of the data (from the blog, news and twitter datasets), further cleaning and tokenising them, resulting in a sample dataset of 500,000 lines and 10.2 million words!
+
+This cleaned dataset was then used as input in the `unnest_ngrams()` function which returned all possible n-grams for a particular dataset for a specified value of n. For the purposes of my model I created n-grams in the range [1-4]. The generated n-grams were then restructured to the form `phrase` and `frequency` so that further processing could be done.
+
+After this I did some further cleaning of the generated n-grams as the data generated was too large to deal with so I manually filtered the frequency cut off for each of the n-grams
+
+## Predictive Algorithm
+
+The string for which a prediction needs to be made is passed into a recursive backoff algorithm. **Essentially,** the algorithm checks the string that most closely matches the inputted string in the highest n-gram (n=4). If it is not found here, it recursively moves down n-grams until it reaches the base case.
+
+```{r, eval = FALSE, echo = TRUE}
+backoff_prediction <- function(x) {
+  # ... input is tokenised here
+  if (length(words) >= 3) {
+    # ... processing / search is done here
+    if (nrow(match_exact) > 0) {
+      return(match_exact$word4[1]) # Returns word prediction
+    }
+    else {
+      # ...
+      backoff_prediction(tail_words) # Recursive function call
+    }
+  # ... Code continued
+```
+
+
+## Deployment Of Application and User Interface
+
+The completed application was then deployed onto shinyapps.io using `rsconnect::deployApp('Word_Prediction')`. The application then predicts and displays a word based on the user's input.
+
+Notes:
+
+- This project was a deeply fulfilling journey where I got to learn a lot about data science and applying it in R.
+- I want to thank you for reading my presentation on my application.
